@@ -21,11 +21,14 @@ class User(db.Model, UserMixin):
     location = db.Column(db.String(50))
     member_since = db.Column(db.DateTime(), default=datetime.utcnow)
     confirmed = db.Column(db.Boolean, default=False)
+    
     role_id = db.Column(db.Integer, db.ForeignKey('role.id'))
     role = db.relationship('Role', back_populates='users')
     photos = db.relationship('Photo', back_population='author', cascade='all')
+    collections = db.relationship('Collect', back_populates='collector', cascade='all')
+    comments = db.relationship('Comment', back_populates='author', cascade='all')
     
-    def __init__(self,**kwargs):
+    def __init__(self, **kwargs):
         # super内的 User可以不用写，但是必须写self
         super(User, self).__init__(**kwargs)
         self.generate_avatar()
@@ -43,7 +46,7 @@ class User(db.Model, UserMixin):
             else:
                 self.role = Role.query.filter_by(name='User').first()
             db.session.commit()
-            
+    
     def generate_avatar(self):
         avatar = Identicon()
         filenames = avatar.generate(text=self.username)
@@ -120,6 +123,12 @@ class Permission(db.Model):
     roles = db.relationship('Role', secondary=roles_permissions, back_populates='permissions')
 
 
+tagging = db.Table('tagging',
+                   db.Column('photo_id', db.Integer, db.ForeignKey('photo.id')),
+                   db.Column('tag_id', db.Integer, db.ForeignKey('tag.id'))
+                   )
+
+
 class Photo(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     description = db.Column(db.String(255))
@@ -127,11 +136,62 @@ class Photo(db.Model):
     filename_s = db.Column(db.String(64))
     filename_m = db.Column(db.String(64))
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    can_comment = db.Column(db.Boolean, default=True)
+    flag = db.Column(db.Integer, default=0)
+    
     author_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     author = db.relationship('User', back_population='photos')
+    comments = db.relationship('Comment', back_population='photo', cascade='all')
+    
+    tag = db.relation('Tag', back_populates='photos', secondary=tagging)
+    
+    collectors = db.relationship('Collect', back_populates='collected', cascade='all')
+    
+    @property
+    def collectors_count(self):
+        return len(self.collectors)
+
+
+class Tag(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(30), unique=True)
+    photo = db.relationship('Photo', back_pupolation='tags', secondary=tagging)
+
+
+class Collect(db.Model):
+    collector_id = db.Column(db.Integer, db.ForeignKey('user.id'),
+                             primary_key=True)
+    collected_id = db.Column(db.Integer, db.ForeignKey('photo.id'),
+                             primary_key=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    collector = db.relationship('User', back_populates='collections', lazy='joined')
+    # lazy设为joined的意思是，当我们查询一个收藏记录的时候，会同时查询出这个收藏记录对应的用户，这样就不用再写一条查询语句了
+    collected = db.relationship('Photo', back_populates='collectors', lazy='joined')
+    # lazy设为joined的意思是，当我们查询一个收藏记录的时候，会同时查询出这个收藏记录对应的图片，这样就不用再写一条查询语句了
     
 
-@db.event.listens_for(Photo, 'after_delete', named=True) # named
+class Comment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    body = db.Column(db.String(255))
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    flag = db.Column(db.Integer, default=0)
+    
+    replied_id = db.Column(db.Integer, db.ForeignKey('comment.id'))
+    author_id= db.Colunm(db.Integer, db.ForeignKey('user.id'))
+    photo_id = db.Column(db.Integer, db.ForeignKey('photo.id'))
+    
+    photo = db.relationship('Photo', back_populates='comments')
+    author = db.relationship('User', back_populates='comments')
+    # cascade='all'的意思是，当我们删除一个评论的时候，会把这个评论的回复也删除掉
+    replied = db.relation('Comment', back_populates='replies', cascade='all')
+    # remote_side=[id]的意思是，这个replied属性指向的是Comment表中的id字段
+    replies = db.relationship('Comment', back_population='replied', remote_side=[id])
+    
+    
+
+
+@db.event.listens_for(Photo, 'after_delete', named=True)  # 这里的named=True是为了让target这个参数可以被传入
 def delete_photo(**kwargs):
     target = kwargs['target']
     for filename in [target.filename, target.filename_s, target.filename_m]:
