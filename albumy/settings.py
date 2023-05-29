@@ -1,10 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-    :author: Grey Li (李辉)
-    :url: http://greyli.com
-    :copyright: © 2018 Grey Li <withlihui@gmail.com>
-    :license: MIT, see LICENSE for more details.
-"""
 import os
 import sys
 
@@ -16,6 +10,13 @@ if WIN:
     prefix = 'sqlite:///'
 else:
     prefix = 'sqlite:////'
+
+
+
+class Operations:
+    CONFIRM = 'confirm'
+    RESET_PASSWORD = 'reset-password'
+    CHANGE_EMAIL = 'change-email'
 
 
 class BaseConfig:

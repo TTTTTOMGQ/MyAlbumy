@@ -20,11 +20,14 @@ class User(db.Model, UserMixin):
     bio = db.Column(db.String(120))
     location = db.Column(db.String(50))
     member_since = db.Column(db.DateTime(), default=datetime.utcnow)
+    avatar_s = db.Column(db.String(64))
+    avatar_m = db.Column(db.String(64))
+    avatar_l = db.Column(db.String(64))
     confirmed = db.Column(db.Boolean, default=False)
-    
     role_id = db.Column(db.Integer, db.ForeignKey('role.id'))
+    
     role = db.relationship('Role', back_populates='users')
-    photos = db.relationship('Photo', back_population='author', cascade='all')
+    photos = db.relationship('Photo', back_populates='author', cascade='all')
     collections = db.relationship('Collect', back_populates='collector', cascade='all')
     comments = db.relationship('Comment', back_populates='author', cascade='all')
     
@@ -140,8 +143,8 @@ class Photo(db.Model):
     flag = db.Column(db.Integer, default=0)
     
     author_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-    author = db.relationship('User', back_population='photos')
-    comments = db.relationship('Comment', back_population='photo', cascade='all')
+    author = db.relationship('User', back_populates='photos')
+    comments = db.relationship('Comment', back_populates='photo', cascade='all')
     
     tag = db.relation('Tag', back_populates='photos', secondary=tagging)
     
@@ -155,7 +158,7 @@ class Photo(db.Model):
 class Tag(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(30), unique=True)
-    photo = db.relationship('Photo', back_pupolation='tags', secondary=tagging)
+    photo = db.relationship('Photo', back_populates='tags', secondary=tagging)
 
 
 class Collect(db.Model):
@@ -178,7 +181,7 @@ class Comment(db.Model):
     flag = db.Column(db.Integer, default=0)
     
     replied_id = db.Column(db.Integer, db.ForeignKey('comment.id'))
-    author_id= db.Colunm(db.Integer, db.ForeignKey('user.id'))
+    author_id= db.Column(db.Integer, db.ForeignKey('user.id'))
     photo_id = db.Column(db.Integer, db.ForeignKey('photo.id'))
     
     photo = db.relationship('Photo', back_populates='comments')
@@ -186,7 +189,7 @@ class Comment(db.Model):
     # cascade='all'的意思是，当我们删除一个评论的时候，会把这个评论的回复也删除掉
     replied = db.relation('Comment', back_populates='replies', cascade='all')
     # remote_side=[id]的意思是，这个replied属性指向的是Comment表中的id字段
-    replies = db.relationship('Comment', back_population='replied', remote_side=[id])
+    replies = db.relationship('Comment', back_populates='replied', remote_side=[id])
     
     
 

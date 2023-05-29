@@ -5,7 +5,7 @@ from flask import render_template, Blueprint, request, current_app, send_from_di
 from flask_dropzone import random_filename
 from flask_login import login_required, current_user
 
-from albumy import db
+from albumy.extensions import db
 from albumy.decorators import confirm_required, permission_required
 from albumy.forms.main import DescriptionForm, TagForm, CommentForm
 from albumy.models import Photo, Tag, Comment
@@ -58,7 +58,7 @@ def get_image(filename):
     return send_from_directory(current_app.config['AVATARS_UPLOAD_PATH'], filename)
 
 
-@main_bp.route('photo/<int:photo_id>')
+@main_bp.route('/photo/<int:photo_id>')
 def show_photo(photo_id):
     photo = Photo.query.get_or_404(photo_id)
     description_form = DescriptionForm()
@@ -66,7 +66,7 @@ def show_photo(photo_id):
     return render_template('main/photo.html', photo=photo, description_form=description_form)
 
 
-@main_bp.route('photo/n/<int:photo_id>')
+@main_bp.route('/photo/n/<int:photo_id>')
 def photo_next(photo_id):
     photo = Photo.query.get_or_404(photo_id)
     # with_parent() 方法可以指定查询的父模型，这样就可以避免使用 filter_by() 方法
@@ -77,7 +77,7 @@ def photo_next(photo_id):
     return redirect(url_for('main.show_photo', photo_id=photo_n.id))
 
 
-@main_bp.route('photo/p/<int:photo_id>')
+@main_bp.route('/photo/p/<int:photo_id>')
 def photo_previous(photo_id):
     photo = Photo.query.get_or_404(photo_id)
     # with_parent() 方法可以指定查询的父模型，这样就可以避免使用 filter_by() 方法 这里filter()是过滤器
@@ -121,7 +121,7 @@ def set_comment(photo_id):
     return redirect(url_for('main.show_photo', photo_id=photo_id))
 
 
-@main_bp.route('/report/photo/<int:photo_id', methods=['POST'])
+@main_bp.route('/report/photo/<int:photo_id>', methods=['POST'])
 @login_required
 @confirm_required
 def report_photo(photo_id):
@@ -132,7 +132,7 @@ def report_photo(photo_id):
     return redirect(url_for('main.show_photo', photo_id=photo_id))
 
 
-@main_bp.route('/delete/photo/<int:photo_id', methods=['POST'])
+@main_bp.route('/delete/photo/<int:photo_id>', methods=['POST'])
 @login_required
 def delete_photo(photo_id):
     photo = Photo.query.get_or_404(photo_id)

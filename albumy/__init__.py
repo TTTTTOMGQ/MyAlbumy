@@ -1,17 +1,16 @@
 # -*- coding: utf-8 -*-
-"""
-    :author: Grey Li (李辉)
-    :url: http://greyli.com
-    :copyright: © 2018 Grey Li <withlihui@gmail.com>
-    :license: MIT, see LICENSE for more details.
-"""
 import os
 
 import click
 from flask import Flask, render_template
+from flask_wtf.csrf import CSRFError
 
+from albumy.blueprints.ajax import ajax_bp
+from albumy.blueprints.auth import auth_bp
 from albumy.blueprints.main import main_bp
-from albumy.extensions import bootstrap, db, mail, moment
+from albumy.blueprints.user import user_bp
+from albumy.extensions import bootstrap, db, mail, moment, dropzone, avatars, csrf, login_manager, migrate
+from albumy.models import User, Photo, Tag, Comment, Role
 from albumy.settings import config
 
 
@@ -36,18 +35,26 @@ def create_app(config_name=None):
 def register_extensions(app):
     bootstrap.init_app(app)
     db.init_app(app)
+    login_manager.init_app(app)
     mail.init_app(app)
+    dropzone.init_app(app)
     moment.init_app(app)
+    avatars.init_app(app)
+    csrf.init_app(app)
+    migrate.init_app(app, db)
 
 
 def register_blueprints(app):
     app.register_blueprint(main_bp)
+    app.register_blueprint(user_bp, url_prefix='/user')
+    app.register_blueprint(auth_bp, url_prefix='/auth')
+    app.register_blueprint(ajax_bp, url_prefix='/ajax')
 
 
 def register_shell_context(app):
     @app.shell_context_processor
     def make_shell_context():
-        return dict(db=db)
+        return dict(db=db, User=User, Photo=Photo, Tag=Tag, Comment=Comment)
 
 
 def register_template_context(app):
@@ -75,6 +82,10 @@ def register_errorhandlers(app):
     def internal_server_error(e):
         return render_template('errors/500.html'), 500
 
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(e):
+        return render_template('errors/400.html', description=e.description), 500
+
 
 def register_commands(app):
     @app.cli.command()
@@ -93,6 +104,9 @@ def register_commands(app):
         """Initialize Albumy."""
         click.echo('Initializing the database...')
         db.create_all()
+
+        click.echo('Initializing the roles and permissions...')
+        Role.init_role()
 
         click.echo('Done.')
 
