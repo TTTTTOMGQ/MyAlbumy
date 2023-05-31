@@ -146,7 +146,7 @@ class Photo(db.Model):
     author = db.relationship('User', back_populates='photos')
     comments = db.relationship('Comment', back_populates='photo', cascade='all')
     
-    tag = db.relation('Tag', back_populates='photos', secondary=tagging)
+    tags = db.relation('Tag', back_populates='photos', secondary=tagging)
     
     collectors = db.relationship('Collect', back_populates='collected', cascade='all')
     
@@ -158,7 +158,7 @@ class Photo(db.Model):
 class Tag(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(30), unique=True)
-    photo = db.relationship('Photo', back_populates='tags', secondary=tagging)
+    photos = db.relationship('Photo', back_populates='tags', secondary=tagging)
 
 
 class Collect(db.Model):

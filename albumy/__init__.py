@@ -111,6 +111,25 @@ def register_commands(app):
         click.echo('Done.')
 
     @app.cli.command()
-    def forge():
+    @click.option('--user', default=10, help='Quantity of users, default is 10.')
+    @click.option('--photo', default=30, help='Quantity of photos, default is 500.')
+    @click.option('--tag', default=20, help='Quantity of tags, default is 500.')
+    @click.option('--comment', default=100, help='Quantity of comments, default is 500.')
+    def forge(user, photo, tag, comment):
         """Generate fake data."""
-        pass
+        from fakes import fake_admin, fake_comment, fake_photo, fake_tag, fake_user
+        
+        db.drop_all()
+        db.create_all()
+        
+        click.echo('Generating the administrator...')
+        fake_admin()
+        click.echo('Generating %d users...' % user)
+        fake_user(user)
+        click.echo('Generating %d tags...' % tag)
+        fake_tag(tag)
+        click.echo('Generating %d photos...' % photo)
+        fake_photo(photo)
+        click.echo('Generating %d comments...' % comment)
+        fake_comment(comment)
+        click.echo('Done.')
