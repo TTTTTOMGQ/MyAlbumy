@@ -1,6 +1,6 @@
 # -*- codeing = utf-8 -*-
 from flask import url_for, flash, render_template, Blueprint
-from flask_login import current_user, login_user, login_required, logout_user
+from flask_login import current_user, login_user, login_required, logout_user, login_fresh
 from werkzeug.utils import redirect
 
 from albumy.extensions import db
@@ -121,3 +121,19 @@ def reset_password(token):
             flash('Invalid or expired link.', 'danger')
             return redirect(url_for('.forget_password'))
     return render_template('auth/reset_password.html', form=form)
+
+
+@auth_bp.route('/re-authenticate', methods=['GET', 'POST'])
+@login_required
+def re_authenticate():
+    if login_fresh():
+        return redirect(url_for('main.index'))
+    
+    form = LoginForm()
+    if form.validate_on_submit():
+        if current_user.validate_password(form.password.data):
+            flash('Re-authenticated.', 'success')
+            return redirect_back()
+        else:
+            flash('Invalid password.', 'danger')
+    return render_template('auth/login.html', form=form)

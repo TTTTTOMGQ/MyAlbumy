@@ -8,7 +8,8 @@ from flask_login import login_required, current_user
 from albumy.extensions import db
 from albumy.decorators import confirm_required, permission_required
 from albumy.forms.main import DescriptionForm, TagForm, CommentForm
-from albumy.models import Photo, Tag, Comment
+from albumy.models import Photo, Tag, Comment, Notification
+from albumy.nitifications import push_collect_notification, push_comment_notification
 from albumy.utils import flash_errors
 
 main_bp = Blueprint('main', __name__)
@@ -132,6 +133,44 @@ def report_photo(photo_id):
     return redirect(url_for('main.show_photo', photo_id=photo_id))
 
 
+@main_bp.route('/collect/<int:photo_id>', methods=['POST'])
+@login_required
+@confirm_required
+@permission_required('COLLECT')
+def collect(photo_id):
+    photo = Photo.query.get_or_404(photo_id)
+    if current_user.is_collecting(photo):
+        flash('Already collected.', 'info')
+        return redirect(url_for('main.show_photo', photo_id=photo_id))
+    current_user.collect(photo)
+    flash('Photo collected.', 'success')
+    if current_user != photo.author and photo.author.receive_collect_notification:
+        push_collect_notification(collector=current_user, photo_id=photo_id, recipient=photo.author)
+    return redirect(url_for('main.show_photo', photo_id=photo_id))
+
+
+@main_bp.route('/uncollect/<int:photo_id>', methods=['POST'])
+@login_required
+def uncollect(photo_id):
+    photo = Photo.query.get_or_404(photo_id)
+    if current_user.is_collecting(photo):
+        current_user.uncollect(photo)
+        flash('Photo uncollected.', 'success')
+        return redirect(url_for('main.show_photo', photo_id=photo_id))
+    flash('Not collect yet.', 'info')
+    return redirect(url_for('main.show_photo', photo_id=photo_id))
+
+
+@main_bp.route('/photo/<int:photo_id>/collectors')
+def show_collectors(photo_id):
+    photo = Photo.query.get_or_404(photo_id)
+    page = request.args.get('page', 1, type=int)
+    per_page = current_app.config['ALBUMY_PHOTO_COLLECTORS_PER_PAGE']
+    pagination = photo.collectors.paginate(page, per_page)
+    collects = pagination.items
+    return render_template('main/collectors.html', photo=photo, pagination=pagination, collects=collects)
+
+
 @main_bp.route('/delete/photo/<int:photo_id>', methods=['POST'])
 @login_required
 def delete_photo(photo_id):
@@ -221,6 +260,8 @@ def new_comment(photo_id):
         db.session.add(comment)
         db.session.commit()
         flash('Comment published.', 'success')
+        if current_user != photo.author and photo.author.receive_comment_notification:
+            push_comment_notification(photo_id=photo_id, receiver=photo.author)
     flash_errors(form)
     return redirect(url_for('main.show_photo', photo_id=photo_id, page=page))
 
@@ -258,3 +299,39 @@ def delete_comment(comment_id):
     db.session.commit()
     flash('Comment deleted.', 'success')
     return redirect(url_for('main.show_photo', photo_id=comment.photo_id))
+
+
+@main_bp.route('/notifications')
+@login_required
+def show_notifications():
+    page = request.args.get('page', 1, type=int)
+    per_page = current_app.config['ALBUMY_NOTIFICATION_PER_PAGE']
+    notifications = Notification.query.with_parent(current_user)
+    filter_rule = request.args.get('filter')
+    if filter_rule == 'unread':
+        notifications = notifications.filter_by(is_read=False)
+    pagination = notifications.order_by(Notification.timestamp.desc()).paginate(page, per_page)
+    notifications = pagination.items
+    return render_template('main/notifications.html', notifications=notifications, pagination=pagination)
+
+
+@main_bp.route('/notifications/read/<int:notification_id>', methods=['POST'])
+@login_required
+def read_notification(notification_id):
+    notification = Notification.query.get_or_404(notification_id)
+    if current_user != notification.receiver:
+        abort(403)
+    notification.is_read = True
+    db.session.commit()
+    flash('Notification archived.', 'success')
+    return redirect(url_for('main.show_notifications'))
+
+
+@main_bp.route('/notifications/read/all', methods=['POST'])
+@login_required
+def read_all_notification():
+    for notification in current_user.notifications:
+        notification.is_read = True
+    db.session.commit()
+    flash('All notifications archived.', 'success')
+    return redirect(url_for('main.show_notifications'))

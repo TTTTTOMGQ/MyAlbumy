@@ -9,6 +9,25 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 from albumy.extensions import db
 
+roles_permissions = db.Table('roles_permissions',
+                             db.Column('role_id', db.Integer, db.ForeignKey('role.id')),
+                             db.Column('permission_id', db.Integer, db.ForeignKey('permission.id'))
+                             )
+
+tagging = db.Table('tagging',
+                   db.Column('photo_id', db.Integer, db.ForeignKey('photo.id')),
+                   db.Column('tag_id', db.Integer, db.ForeignKey('tag.id'))
+                   )
+
+
+class Follow:
+    follower_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
+    followed_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    # follower 指的是粉丝，followed指的是关注的人
+    follower = db.relationship('User', foreign_keys=[follower_id], back_populates='following', lazy='joined')
+    followed = db.relationship('User', foreign_keys=[followed_id], back_populates='followers', lazy='joined')
+
 
 class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
@@ -23,6 +42,7 @@ class User(db.Model, UserMixin):
     avatar_s = db.Column(db.String(64))
     avatar_m = db.Column(db.String(64))
     avatar_l = db.Column(db.String(64))
+    avatar_raw = db.Column(db.String(64))
     confirmed = db.Column(db.Boolean, default=False)
     role_id = db.Column(db.Integer, db.ForeignKey('role.id'))
     
@@ -30,11 +50,29 @@ class User(db.Model, UserMixin):
     photos = db.relationship('Photo', back_populates='author', cascade='all')
     collections = db.relationship('Collect', back_populates='collector', cascade='all')
     comments = db.relationship('Comment', back_populates='author', cascade='all')
+    # following是正在关注的人，followers是关注自己的人
+    following = db.relationship('Follow', foreign_keys=[Follow.follower_id], back_populates='follower', lazy='dynamic',
+                                cascade='all')
+    followers = db.relationship('Follow', foreign_keys=[Follow.followed_id], back_populates='followed', lazy='dynamic',
+                                cascade='all')
+    
+    notifications = db.relationship('Notification', back_populates='receiver', cascade='all')
+    receive_comments_notifications = db.Column(db.Boolean, default=True)
+    receive_follow_notifications = db.Column(db.Boolean, default=True)
+    receive_collect_notifications = db.Column(db.Boolean, default=True)
+    
+    show_collections = db.Column(db.Boolean, default=True)
+    
+    @property
+    def is_admin(self):
+        return self.role.name == 'Administrator'
     
     def __init__(self, **kwargs):
         # super内的 User可以不用写，但是必须写self
         super(User, self).__init__(**kwargs)
         self.generate_avatar()
+        self.set_role()
+        self.follow(self)
     
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -58,6 +96,46 @@ class User(db.Model, UserMixin):
         self.avatar_l = filenames[2]
         db.session.commit()
     
+    def can(self, permission_name):
+        permission = Permission.query.filter_by(name=permission_name).first()
+        return permission is not None and \
+            self.role is not None and \
+            permission in self.role.permissions
+    
+    def collect(self, photo):
+        if not self.is_collecting(photo):
+            collect = Collect(collector=self, collected=photo)
+            db.session.add(collect)
+            db.session.commit()
+    
+    def uncollect(self, photo):
+        collect = Collect.collected.filter_by(collected_id=photo.id).first()
+        if collect:
+            db.session.delete(collect)
+            db.session.commit()
+    
+    def is_collecting(self, photo):
+        return self.collected.filter_by(photo_id=photo.id).first is not None
+    
+    def follow(self, user):
+        if not self.is_following(user):
+            # 设置被关注者为user，关注者为self
+            follow = Follow(follower=self, followed=user)
+            db.session.add(follow)
+            db.session.commit()
+    
+    def unfollow(self, user):
+        follow = self.followed.filter_by(followed_id=user.id).first()
+        if follow:
+            db.session.delete(follow)
+            db.session.commit()
+    
+    def is_following(self, user):
+        return self.following.filter_by(followed_id=user.id).first() is not None
+    
+    def is_followed_by(self, user):
+        return self.followers.filter_by(follower_id=user.id).first() is not None
+    
     @staticmethod
     def init_role_permission():
         for user in User.query.all():
@@ -68,25 +146,7 @@ class User(db.Model, UserMixin):
                     user.role = Role.query.filter_by(name='User').first()
             db.session.add(user)
         db.session.commit()
-    
-    def can(self, permission_name):
-        permission = Permission.query.filter_by(name=permission_name).first()
-        return permission is not None and \
-            self.role is not None and \
-            permission in self.role.permissions
-    
-    @property
-    def is_admin(self):
-        return self.role.name == 'Administrator'
 
-
-roles_permissions = db.Table('roles_permissions',
-                             db.Column('role_id', db.Integer, db.ForeignKey('role.id')),
-                             db.Column('permission_id', db.Integer, db.ForeignKey('permission.id'))
-                             )
-
-
-# 这里是新建了一个表，表名为roles_permissions，表中有两个字段，分别是role_id和permission_id，这两个字段分别是role表和permission表的外键
 
 class Role(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -124,12 +184,6 @@ class Permission(db.Model):
     name = db.Column(db.String(30), unique=True)
     
     roles = db.relationship('Role', secondary=roles_permissions, back_populates='permissions')
-
-
-tagging = db.Table('tagging',
-                   db.Column('photo_id', db.Integer, db.ForeignKey('photo.id')),
-                   db.Column('tag_id', db.Integer, db.ForeignKey('tag.id'))
-                   )
 
 
 class Photo(db.Model):
@@ -172,7 +226,7 @@ class Collect(db.Model):
     # lazy设为joined的意思是，当我们查询一个收藏记录的时候，会同时查询出这个收藏记录对应的用户，这样就不用再写一条查询语句了
     collected = db.relationship('Photo', back_populates='collectors', lazy='joined')
     # lazy设为joined的意思是，当我们查询一个收藏记录的时候，会同时查询出这个收藏记录对应的图片，这样就不用再写一条查询语句了
-    
+
 
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -181,7 +235,7 @@ class Comment(db.Model):
     flag = db.Column(db.Integer, default=0)
     
     replied_id = db.Column(db.Integer, db.ForeignKey('comment.id'))
-    author_id= db.Column(db.Integer, db.ForeignKey('user.id'))
+    author_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     photo_id = db.Column(db.Integer, db.ForeignKey('photo.id'))
     
     photo = db.relationship('Photo', back_populates='comments')
@@ -190,8 +244,15 @@ class Comment(db.Model):
     replied = db.relation('Comment', back_populates='replies', cascade='all')
     # remote_side=[id]的意思是，这个replied属性指向的是Comment表中的id字段
     replies = db.relationship('Comment', back_populates='replied', remote_side=[id])
-    
-    
+
+
+class Notification(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    message = db.Column(db.Text)
+    is_read = db.Column(db.Boolean, default=False, index=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    receiver_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    receiver = db.relationship('User', back_populates='notifications')
 
 
 @db.event.listens_for(Photo, 'after_delete', named=True)  # 这里的named=True是为了让target这个参数可以被传入
@@ -202,3 +263,16 @@ def delete_photo(**kwargs):
             path = os.path.join(current_app.config['ALBUMY_UPLOAD_PATH'], filename)
             if os.path.exists(path):
                 os.remove(path)
+
+
+@db.event.listens_for(User, 'after_delete', named=True)
+def delete_avatar(**kwargs):
+    target = kwargs['target']
+    for filename in [target.avatar_s, target.avatar_m, target.avatar_l, target.avatar_raw]:
+        if filename is not None:
+            path = os.path.join(current_app.config['AVATARS_SAVE_PATH'], filename)
+            if os.path.exists(path):
+                os.remove(path)
+
+
+
