@@ -6,6 +6,7 @@ from flask_moment import Moment
 from flask_sqlalchemy import SQLAlchemy
 from flask_avatars import Avatars
 from flask_dropzone import Dropzone
+from flask_whooshee import Whooshee
 from flask_wtf import CSRFProtect
 from flask_migrate import Migrate
 
@@ -18,6 +19,7 @@ moment = Moment()
 avatars = Avatars()
 csrf = CSRFProtect()
 migrate = Migrate()
+whooshee = Whooshee()
 
 
 @login_manager.user_loader

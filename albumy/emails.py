@@ -41,7 +41,7 @@ def send_reset_password_email(user, token):
               template='emails/reset_password')
 
 
-def send_change_email_email(user, token, to):
+def send_change_email_email(user, token, to=None):
     send_mail(subject='Change Your Email',
               to=to or user.email,
               user=user,

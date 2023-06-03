@@ -4,25 +4,45 @@ import os
 from flask import render_template, Blueprint, request, current_app, send_from_directory, redirect, flash, url_for, abort
 from flask_dropzone import random_filename
 from flask_login import login_required, current_user
+from sqlalchemy import func
 
 from albumy.extensions import db
 from albumy.decorators import confirm_required, permission_required
 from albumy.forms.main import DescriptionForm, TagForm, CommentForm
-from albumy.models import Photo, Tag, Comment, Notification
+from albumy.models import Photo, Tag, Comment, Notification, Follow, Collect, User
 from albumy.nitifications import push_collect_notification, push_comment_notification
-from albumy.utils import flash_errors
+from albumy.utils import flash_errors, redirect_back
 
 main_bp = Blueprint('main', __name__)
 
 
 @main_bp.route('/')
 def index():
-    return render_template('main/index.html')
+    if current_user.is_authenticated:
+        # filter和filter_by的区别:filter_by只能用于等值判断，filter可以用于其他判断
+        followed_photos = Photo.query. \
+            join(Follow, Follow.follow_id == Photo.author_id). \
+            filter(Follow.follower_id == current_user.id). \
+            order_by(Photo.timestamp.desc())
+        page = request.args.get('page', 1, type=int)
+        per_page = current_app.config['ALBUMY_PHOTO_PER_PAGE']
+        pagination = followed_photos.paginate(page, per_page)
+        photos = pagination.items
+    else:
+        pagination = None
+        photos = None
+    tags = Tag.query. \
+        join(Tag.photos). \
+        group_by(Tag.id). \
+        order_by(func.count(Photo.id).desc()). \
+        limit(10)
+    return render_template('main/index.html', pagination=pagination, photos=photos, tags=tags, Collect=Collect)
 
 
 @main_bp.route('/explore')
 def explore():
-    return render_template('main/explore.html')
+    photos = Photo.query.order_by(func.random()).limit(12)
+    return render_template('main/explore.html', photos=photos)
 
 
 @main_bp.route('/upload', methods=['GET', 'POST'])
@@ -335,3 +355,22 @@ def read_all_notification():
     db.session.commit()
     flash('All notifications archived.', 'success')
     return redirect(url_for('main.show_notifications'))
+
+
+@main_bp.route('/search')
+def search():
+    q = request.args.get('q', '')
+    if q == '':
+        flash('Please enter keywords.', 'warning')
+        return redirect_back()
+    category = request.args.get('category', 'photo')
+    page = request.args.get('page', 1, type=int)
+    per_page = current_app.config['ALBUMY_SEARCH_RESULT_PER_PAGE']
+    if category == 'user':
+        pagination = User.query.whooshee_search(q).pagination(page, per_page)
+    if category == 'photo':
+        pagination = Photo.query.whooshee_search(q).pagination(page, per_page)
+    if category == 'tag':
+        pagination = Tag.query.whooshee_search(q).pagination(page, per_page)
+    results = pagination.items
+    return render_template('main/search.html', q=q, category=category, pagination=pagination, results=results)

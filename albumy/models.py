@@ -7,7 +7,7 @@ from flask_avatars import Identicon
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from albumy.extensions import db
+from albumy.extensions import db, whooshee
 
 roles_permissions = db.Table('roles_permissions',
                              db.Column('role_id', db.Integer, db.ForeignKey('role.id')),
@@ -20,7 +20,7 @@ tagging = db.Table('tagging',
                    )
 
 
-class Follow:
+class Follow(db.Model):
     follower_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
     followed_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
@@ -28,7 +28,7 @@ class Follow:
     follower = db.relationship('User', foreign_keys=[follower_id], back_populates='following', lazy='joined')
     followed = db.relationship('User', foreign_keys=[followed_id], back_populates='followers', lazy='joined')
 
-
+@whooshee.register_model('name', 'username')
 class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(20), unique=True, index=True)
@@ -45,6 +45,8 @@ class User(db.Model, UserMixin):
     avatar_raw = db.Column(db.String(64))
     confirmed = db.Column(db.Boolean, default=False)
     role_id = db.Column(db.Integer, db.ForeignKey('role.id'))
+    locked = db.Column(db.Boolean, default=False)
+    active = db.Column(db.Boolean, default=True)
     
     role = db.relationship('Role', back_populates='users')
     photos = db.relationship('Photo', back_populates='author', cascade='all')
@@ -66,7 +68,11 @@ class User(db.Model, UserMixin):
     @property
     def is_admin(self):
         return self.role.name == 'Administrator'
-    
+
+    @property
+    def is_active(self):
+        return self.active
+
     def __init__(self, **kwargs):
         # super内的 User可以不用写，但是必须写self
         super(User, self).__init__(**kwargs)
@@ -136,6 +142,23 @@ class User(db.Model, UserMixin):
     def is_followed_by(self, user):
         return self.followers.filter_by(follower_id=user.id).first() is not None
     
+    def lock(self):
+        self.locked = True
+        self.role = Role.query.filter_by(name='locked').first()
+        db.session.commit()
+    
+    def unlock(self):
+        self.locked = False
+        self.set_role()
+    
+    def block(self):
+        self.active = False
+        db.session.commit()
+    
+    def unblock(self):
+        self.active = True
+        db.session.commit()
+    
     @staticmethod
     def init_role_permission():
         for user in User.query.all():
@@ -185,7 +208,7 @@ class Permission(db.Model):
     
     roles = db.relationship('Role', secondary=roles_permissions, back_populates='permissions')
 
-
+@whooshee.register_model('description')
 class Photo(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     description = db.Column(db.String(255))
@@ -200,7 +223,7 @@ class Photo(db.Model):
     author = db.relationship('User', back_populates='photos')
     comments = db.relationship('Comment', back_populates='photo', cascade='all')
     
-    tags = db.relation('Tag', back_populates='photos', secondary=tagging)
+    tags = db.relationship('Tag', back_populates='photos', secondary=tagging)
     
     collectors = db.relationship('Collect', back_populates='collected', cascade='all')
     
@@ -208,7 +231,7 @@ class Photo(db.Model):
     def collectors_count(self):
         return len(self.collectors)
 
-
+@whooshee.register_model('naem')
 class Tag(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(30), unique=True)
@@ -232,6 +255,7 @@ class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     body = db.Column(db.String(255))
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    # flag是一个标志位，如果flag为0，表示这条评论是正常的，如果flag为1，表示这条评论是被删除的
     flag = db.Column(db.Integer, default=0)
     
     replied_id = db.Column(db.Integer, db.ForeignKey('comment.id'))
@@ -241,7 +265,7 @@ class Comment(db.Model):
     photo = db.relationship('Photo', back_populates='comments')
     author = db.relationship('User', back_populates='comments')
     # cascade='all'的意思是，当我们删除一个评论的时候，会把这个评论的回复也删除掉
-    replied = db.relation('Comment', back_populates='replies', cascade='all')
+    replied = db.relationship('Comment', back_populates='replies', cascade='all')
     # remote_side=[id]的意思是，这个replied属性指向的是Comment表中的id字段
     replies = db.relationship('Comment', back_populates='replied', remote_side=[id])
 

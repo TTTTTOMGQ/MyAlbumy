@@ -3,14 +3,15 @@ import os
 
 import click
 from flask import Flask, render_template
+from flask_login import current_user
 from flask_wtf.csrf import CSRFError
 
 from albumy.blueprints.ajax import ajax_bp
 from albumy.blueprints.auth import auth_bp
 from albumy.blueprints.main import main_bp
 from albumy.blueprints.user import user_bp
-from albumy.extensions import bootstrap, db, mail, moment, dropzone, avatars, csrf, login_manager, migrate
-from albumy.models import User, Photo, Tag, Comment, Role
+from albumy.extensions import bootstrap, db, mail, moment, dropzone, avatars, csrf, login_manager, migrate, whooshee
+from albumy.models import User, Photo, Tag, Comment, Role, Notification
 from albumy.settings import config
 
 
@@ -42,6 +43,7 @@ def register_extensions(app):
     avatars.init_app(app)
     csrf.init_app(app)
     migrate.init_app(app, db)
+    whooshee.init_app(app)
 
 
 def register_blueprints(app):
@@ -58,7 +60,14 @@ def register_shell_context(app):
 
 
 def register_template_context(app):
-    pass
+    # 此处的装饰器是将函数注册为模板上下文处理器，返回的字典中的键可以在模板中使用
+    @app.context_processor
+    def make_template_context():
+        if current_user.is_authenticated:
+            notification_count = Notification.query.with_parent(current_user).filter_by(is_read=False).count()
+        else:
+            notification_count = None
+        return dict(notification_count=notification_count)
 
 
 def register_errorhandlers(app):

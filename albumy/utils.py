@@ -2,9 +2,8 @@
 import os
 import uuid
 
-
 from PIL import Image
-from itsdangerous import TimedJSONWebSignatureSerializer as Serializer, SignatureExpired, BadSignature
+from itsdangerous import URLSafeTimedSerializer as Serializer, SignatureExpired, BadSignature
 
 from albumy.extensions import db
 from albumy.models import User
@@ -18,25 +17,23 @@ except ImportError:
 from flask import request, url_for, redirect, flash, current_app
 
 
-def generate_token(user, operation, expire_in=None, **kwargs):
-    s = Serializer(current_app.config['SECRET_KEY'], expire_in)
-
+def generate_token(user, operation, **kwargs):
+    s = Serializer(current_app.config['SECRET_KEY'])
     data = {'id': user.id, 'operation': operation}
     data.update(**kwargs)
     return s.dumps(data)
 
 
-def validate_token(user, token, operation, new_password=None):
+def validate_token(user, token, operation, new_password=None, max_age=3600):
     s = Serializer(current_app.config['SECRET_KEY'])
-
     try:
-        data = s.loads(token)
+        data = s.loads(token, max_age=max_age)
     except (SignatureExpired, BadSignature):
         return False
-
+    
     if operation != data.get('operation') or user.id != data.get('id'):
         return False
-
+    
     if operation == Operations.CONFIRM:
         user.confirmed = True
     elif operation == Operations.RESET_PASSWORD:
@@ -50,7 +47,7 @@ def validate_token(user, token, operation, new_password=None):
         user.email = new_email
     else:
         return False
-
+    
     db.session.commit()
     return True
 
@@ -70,18 +67,17 @@ def resize_image(image, filename, base_width):
     w_percent = (base_width / float(img.size[0]))
     h_size = int((float(img.size[1]) * float(w_percent)))
     img = img.resize((base_width, h_size), Image.ANTIALIAS)
-
+    
     filename += current_app.config['ALBUMY_PHOTO_SUFFIX'][base_width] + ext
     img.save(os.path.join(current_app.config['ALBUMY_UPLOAD_PATH'], filename), optimize=True, quality=85)
     return filename
-
 
 
 def is_safe_url(target):
     ref_url = urlparse(request.host_url)
     test_url = urlparse(urljoin(request.host_url, target))
     return test_url.scheme in ('http', 'https') and \
-           ref_url.netloc == test_url.netloc
+        ref_url.netloc == test_url.netloc
 
 
 def redirect_back(default='main.index', **kwargs):

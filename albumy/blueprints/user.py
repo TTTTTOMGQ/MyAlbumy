@@ -1,6 +1,6 @@
 # -*- codeing = utf-8 -*-
 from flask import render_template, current_app, request, Blueprint, flash, redirect, url_for
-from flask_login import current_user, login_required, fresh_login_required
+from flask_login import current_user, login_required, fresh_login_required, logout_user
 
 from albumy.emails import send_confirm_email
 from albumy.extensions import avatars, db
@@ -18,6 +18,12 @@ user_bp = Blueprint('user', __name__)
 @user_bp.route('/<username>')
 def index(username):
     user = User.query.filter_by(username=username).first_or_404()
+    if user.locked and user == current_user and not current_user.is_admin:
+        flash('This user is locked.', 'danger')
+        return redirect(url_for('main.index'))
+    if user == current_user and not current_user.active:
+        flash('You has been blocked', 'danger')
+        logout_user()
     page = request.args.get('page', 1, type=int)
     per_page = current_app.config['ALBUMY_PHOTO_PER_PAGE']
     pagination = Photo.query.with_parent(user).order_by(Photo.timestamp.desc()).paginate(page, per_page)

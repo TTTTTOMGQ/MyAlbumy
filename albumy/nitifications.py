@@ -1,7 +1,7 @@
 # -*- codeing = utf-8 -*-
 from flask import url_for
 
-from albumy import db
+from albumy.extensions import db
 from albumy.models import Notification
 
 
