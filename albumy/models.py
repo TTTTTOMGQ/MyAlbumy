@@ -28,6 +28,7 @@ class Follow(db.Model):
     follower = db.relationship('User', foreign_keys=[follower_id], back_populates='following', lazy='joined')
     followed = db.relationship('User', foreign_keys=[followed_id], back_populates='followers', lazy='joined')
 
+
 @whooshee.register_model('name', 'username')
 class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
@@ -59,20 +60,20 @@ class User(db.Model, UserMixin):
                                 cascade='all')
     
     notifications = db.relationship('Notification', back_populates='receiver', cascade='all')
-    receive_comments_notifications = db.Column(db.Boolean, default=True)
-    receive_follow_notifications = db.Column(db.Boolean, default=True)
-    receive_collect_notifications = db.Column(db.Boolean, default=True)
+    receive_comment_notification = db.Column(db.Boolean, default=True)
+    receive_follow_notification = db.Column(db.Boolean, default=True)
+    receive_collect_notification = db.Column(db.Boolean, default=True)
     
     show_collections = db.Column(db.Boolean, default=True)
     
     @property
     def is_admin(self):
         return self.role.name == 'Administrator'
-
+    
     @property
     def is_active(self):
         return self.active
-
+    
     def __init__(self, **kwargs):
         # super内的 User可以不用写，但是必须写self
         super(User, self).__init__(**kwargs)
@@ -88,7 +89,7 @@ class User(db.Model, UserMixin):
     
     def set_role(self):
         if self.role is None:
-            if self.email == current_app.config('ALBUMY_ADMIN_EMAIL'):
+            if self.email == current_app.config['ALBUMY_ADMIN_EMAIL']:
                 self.role = Role.query.filter_by(name='Administrator').first()
             else:
                 self.role = Role.query.filter_by(name='User').first()
@@ -115,13 +116,13 @@ class User(db.Model, UserMixin):
             db.session.commit()
     
     def uncollect(self, photo):
-        collect = Collect.collected.filter_by(collected_id=photo.id).first()
+        collect = Collect.query.with_parent(self).filter_by(collected_id=photo.id).first()
         if collect:
             db.session.delete(collect)
             db.session.commit()
     
     def is_collecting(self, photo):
-        return self.collected.filter_by(photo_id=photo.id).first is not None
+        return Collect.query.with_parent(self).filter_by(collected_id=photo.id).first() is not None
     
     def follow(self, user):
         if not self.is_following(user):
@@ -131,12 +132,14 @@ class User(db.Model, UserMixin):
             db.session.commit()
     
     def unfollow(self, user):
-        follow = self.followed.filter_by(followed_id=user.id).first()
+        follow = self.following.filter_by(followed_id=user.id).first()
         if follow:
             db.session.delete(follow)
             db.session.commit()
     
     def is_following(self, user):
+        if user.id is None:  # when follow self, user.id will be None
+            return False
         return self.following.filter_by(followed_id=user.id).first() is not None
     
     def is_followed_by(self, user):
@@ -174,7 +177,7 @@ class User(db.Model, UserMixin):
 class Role(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(30), unique=True)
-    # back_populates为什么是roles，而不是role呢？因为这里的roles是一个列表，而不是一个对象
+    # 因为这里的roles是一个列表，而不是一个对象
     permissions = db.relationship('Permission', secondary=roles_permissions, back_populates='roles')
     users = db.relationship('User', back_populates='role')
     
@@ -192,7 +195,7 @@ class Role(db.Model):
                 role = Role(name=role_name)
                 db.session.add(role)
             role.permissions = []
-            # role本身没有permissions属性，但是有一个permissions的关系属性，这个属性是一个列表,至于为什么是列表，因为这个属性是一个多对多的关系，所以是一个列表
+            # role本身没有permissions属性，但是有一个permissions的关系属性，因为这个属性是一个多对多的关系，所以是一个列表
             for permission_name in roles_permissions_map[role_name]:
                 permission = Permission.query.filter_by(name=permission_name).first()
                 if permission is None:
@@ -207,6 +210,7 @@ class Permission(db.Model):
     name = db.Column(db.String(30), unique=True)
     
     roles = db.relationship('Role', secondary=roles_permissions, back_populates='permissions')
+
 
 @whooshee.register_model('description')
 class Photo(db.Model):
@@ -231,7 +235,8 @@ class Photo(db.Model):
     def collectors_count(self):
         return len(self.collectors)
 
-@whooshee.register_model('naem')
+
+@whooshee.register_model('name')
 class Tag(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(30), unique=True)
@@ -265,9 +270,9 @@ class Comment(db.Model):
     photo = db.relationship('Photo', back_populates='comments')
     author = db.relationship('User', back_populates='comments')
     # cascade='all'的意思是，当我们删除一个评论的时候，会把这个评论的回复也删除掉
-    replied = db.relationship('Comment', back_populates='replies', cascade='all')
+    replies = db.relationship('Comment', back_populates='replied', cascade='all')
     # remote_side=[id]的意思是，这个replied属性指向的是Comment表中的id字段
-    replies = db.relationship('Comment', back_populates='replied', remote_side=[id])
+    replied = db.relationship('Comment', back_populates='replies', remote_side=[id])
 
 
 class Notification(db.Model):
@@ -297,6 +302,3 @@ def delete_avatar(**kwargs):
             path = os.path.join(current_app.config['AVATARS_SAVE_PATH'], filename)
             if os.path.exists(path):
                 os.remove(path)
-
-
-

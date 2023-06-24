@@ -1,9 +1,14 @@
 # -*- codeing = utf-8 -*-
-from flask_wtf import FlaskForm
+from flask_wtf import FlaskForm as _FlaskForm
 from wtforms import StringField, SubmitField, PasswordField, BooleanField
 from wtforms.validators import DataRequired, Length, Email, Regexp, EqualTo, ValidationError
 
 from albumy.models import User
+
+
+class FlaskForm(_FlaskForm):
+    def validate_on_submit(self, extra_validators=None):
+        return self.is_submitted() and self.validate()
 
 
 class RegisterForm(FlaskForm):

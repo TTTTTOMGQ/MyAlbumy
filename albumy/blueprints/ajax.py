@@ -28,7 +28,7 @@ def follow(username):
     if current_user.is_following(user):
         return jsonify(message='Already followed.'), 400
     current_user.follow(user)
-    if user.receive_follow_notifications:
+    if user.receive_follow_notification:
         push_follow_notification(follower=current_user, receiver=user)
     return jsonify(message='User followed.'), 200
 

@@ -1,11 +1,16 @@
 # -*- codeing = utf-8 -*-
 from flask_login import current_user
-from flask_wtf import FlaskForm
+from flask_wtf import FlaskForm as _FlaskForm
 from flask_wtf.file import FileRequired, FileAllowed
 from wtforms import StringField, TextAreaField, SubmitField, FileField, HiddenField, PasswordField, BooleanField
 from wtforms.validators import Length, DataRequired, Regexp, Optional, URL, ValidationError, EqualTo, Email
 
 from albumy.models import User
+
+
+class FlaskForm(_FlaskForm):
+    def validate_on_submit(self, extra_validators=None):
+        return self.is_submitted() and self.validate()
 
 
 class EditProfileForm(FlaskForm):
@@ -45,7 +50,8 @@ class ChangePasswordForm(FlaskForm):
     password = PasswordField('New password', validators=[DataRequired(), Length(8, 128), EqualTo('password2')])
     password2 = PasswordField('Confirm new password', validators=[DataRequired()])
     submit = SubmitField()
-    
+
+
 class ChangeEmailForm(FlaskForm):
     email = StringField('New Email', validators=[DataRequired(), Length(1, 254), Email()])
     submit = SubmitField()
@@ -65,7 +71,8 @@ class NotificationSettingForm(FlaskForm):
 class PrivacySettingForm(FlaskForm):
     public_collections = BooleanField('Public my collections')
     submit = SubmitField()
-    
+
+
 class DeleteAccountForm(FlaskForm):
     username = StringField('Username', validators=[DataRequired(), Length(1, 20)])
     submit = SubmitField()

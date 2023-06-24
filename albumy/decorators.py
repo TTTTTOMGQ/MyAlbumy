@@ -6,6 +6,7 @@ from flask_login import current_user
 from markupsafe import Markup
 
 
+# 确认账户装饰器
 def confirm_required(func):
     @wraps(func)
     def decorated_function(*args, **kwargs):
@@ -23,6 +24,7 @@ def confirm_required(func):
     return decorated_function
 
 
+# 权限验证装饰器
 def permission_required(permission_name):
     def decorator(func):
         @wraps(func)
@@ -36,5 +38,6 @@ def permission_required(permission_name):
     return decorator
 
 
+# 管理员权限验证装饰器
 def admin_required(func):
     return permission_required('ADMINISTER')(func)

@@ -14,9 +14,10 @@ fake = Faker()
 
 
 def fake_admin():
-    admin = User(name='TTTTTOM',
-                 username='tttttom',
-                 email='admin@qq.com',
+    # 创建管理员账户
+    admin = User(name='',
+                 username='',
+                 email='',
                  bio=fake.sentence(),
                  website=fake.url(),
                  confirmed=True)
@@ -26,6 +27,7 @@ def fake_admin():
 
 
 def fake_user(count=10):
+    # 创建普通用户
     for i in range(count):
         user = User(name=fake.name(),
                     confirmed=True,
@@ -43,7 +45,16 @@ def fake_user(count=10):
             db.session.rollback()
 
 
+def fake_follow(count=30):
+    # 创建用户之间的关注关系
+    for i in range(count):
+        user = User.query.get(random.randint(1, User.query.count()))
+        user.follow(User.query.get(random.randint(1, User.query.count())))
+    db.session.commit()
+
+
 def fake_tag(count=20):
+    # 创建标签
     for i in range(count):
         tag = Tag(name=fake.word())
         db.session.add(tag)
@@ -55,11 +66,9 @@ def fake_tag(count=20):
 
 
 def fake_photo(count=30):
-    # photos
+    # 创建图片
     upload_path = current_app.config['ALBUMY_UPLOAD_PATH']
     for i in range(count):
-        print(i)
-        
         filename = 'random_%d.jpg' % i
         # lambda函数在每次调用r时都生成一个随机数
         r = lambda: random.randint(128, 255)
@@ -85,7 +94,16 @@ def fake_photo(count=30):
     db.session.commit()
 
 
+def fake_collect(count=50):
+    # 创建收藏
+    for i in range(count):
+        user = User.query.get(random.randint(1, User.query.count()))
+        user.collect(Photo.query.get(random.randint(1, Photo.query.count())))
+    db.session.commit()
+
+
 def fake_comment(count=100):
+    # 创建评论
     for i in range(count):
         comment = Comment(
             author=User.query.get(random.randint(1, User.query.count())),

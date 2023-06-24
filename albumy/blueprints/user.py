@@ -26,7 +26,7 @@ def index(username):
         logout_user()
     page = request.args.get('page', 1, type=int)
     per_page = current_app.config['ALBUMY_PHOTO_PER_PAGE']
-    pagination = Photo.query.with_parent(user).order_by(Photo.timestamp.desc()).paginate(page, per_page)
+    pagination = Photo.query.with_parent(user).order_by(Photo.timestamp.desc()).paginate(page=page, per_page=per_page)
     photos = pagination.items
     return render_template('user/index.html', user=user, pagination=pagination, photos=photos)
 
@@ -36,7 +36,7 @@ def show_collections(username):
     user = User.query.filter_by(username=username).first_or_404()
     page = request.args.get('page', 1, type=int)
     per_page = current_app.config['ALBUMY_PHOTO_PER_PAGE']
-    pagination = Collect.query.with_parent(user).order_by(Collect.timestamp.desc()).paginate(page, per_page)
+    pagination = Collect.query.with_parent(user).order_by(Collect.timestamp.desc()).paginate(page=page, per_page=per_page)
     collects = pagination.items
     return render_template('user/collections.html', user=user, pagination=pagination, collects=collects)
 
@@ -52,7 +52,7 @@ def follow(username):
         return render_template('user/index.html', user=user)
     current_user.follow(user)
     flash('User followed.', 'success')
-    if current_user.receive_follow_notification:
+    if current_user.receive_follow_notifications:
         push_follow_notification(follower=current_user, receiver=user)
     return redirect_back()
 
@@ -73,7 +73,7 @@ def show_followers(username):
     user = User.query.filter_by(username=username).first_or_404()
     page = request.args.get('page', 1, type=int)
     per_page = current_app.config['ALBUMY_USER_PER_PAGE']
-    pagination = user.followers.pagination(page, per_page)
+    pagination = user.followers.paginate(page=page, per_page=per_page)
     follows = pagination.items
     return render_template('user/followers.html', user=user, pagination=pagination, follows=follows)
 
@@ -83,9 +83,9 @@ def show_following(username):
     user = User.query.filter_by(username=username).first_or_404()
     page = request.args.get('page', 1, type=int)
     per_page = current_app.config['ALBUMY_USER_PER_PAGE']
-    pagination = user.followeing.pagination(page, per_page)
+    pagination = user.following.paginate(page=page, per_page=per_page)
     follows = pagination.items
-    return render_template('user/followers.html', user=user, pagination=pagination, follows=follows)
+    return render_template('user/following.html', user=user, pagination=pagination, follows=follows)
 
 
 @user_bp.route('/settings/profile', methods=['GET', 'POST'])

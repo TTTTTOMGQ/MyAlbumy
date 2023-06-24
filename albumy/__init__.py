@@ -6,6 +6,7 @@ from flask import Flask, render_template
 from flask_login import current_user
 from flask_wtf.csrf import CSRFError
 
+from albumy.blueprints.admin import admin_bp
 from albumy.blueprints.ajax import ajax_bp
 from albumy.blueprints.auth import auth_bp
 from albumy.blueprints.main import main_bp
@@ -51,6 +52,7 @@ def register_blueprints(app):
     app.register_blueprint(user_bp, url_prefix='/user')
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(ajax_bp, url_prefix='/ajax')
+    app.register_blueprint(admin_bp, url_prefix='/admin')
 
 
 def register_shell_context(app):
@@ -121,24 +123,32 @@ def register_commands(app):
 
     @app.cli.command()
     @click.option('--user', default=10, help='Quantity of users, default is 10.')
-    @click.option('--photo', default=30, help='Quantity of photos, default is 500.')
-    @click.option('--tag', default=20, help='Quantity of tags, default is 500.')
-    @click.option('--comment', default=100, help='Quantity of comments, default is 500.')
-    def forge(user, photo, tag, comment):
+    @click.option('--follow', default=30, help='Quantity of follows, default is 30.')
+    @click.option('--photo', default=30, help='Quantity of photos, default is 30.')
+    @click.option('--tag', default=20, help='Quantity of tags, default is 20.')
+    @click.option('--collect', default=50, help='Quantity of collects, default is 50.')
+    @click.option('--comment', default=100, help='Quantity of comments, default is 100.')
+    def forge(user, follow, photo, tag, collect, comment):
         """Generate fake data."""
-        from fakes import fake_admin, fake_comment, fake_photo, fake_tag, fake_user
+        from albumy.fakes import fake_admin, fake_comment, fake_follow, fake_photo, fake_tag, fake_user, fake_collect
         
         db.drop_all()
         db.create_all()
-        
+
+        click.echo('Initializing the roles and permissions...')
+        Role.init_role()
         click.echo('Generating the administrator...')
         fake_admin()
         click.echo('Generating %d users...' % user)
         fake_user(user)
+        click.echo('Generating %d follows...' % follow)
+        fake_follow(follow)
         click.echo('Generating %d tags...' % tag)
         fake_tag(tag)
         click.echo('Generating %d photos...' % photo)
         fake_photo(photo)
+        click.echo('Generating %d collects...' % photo)
+        fake_collect(collect)
         click.echo('Generating %d comments...' % comment)
         fake_comment(comment)
         click.echo('Done.')

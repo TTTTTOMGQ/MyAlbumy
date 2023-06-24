@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 import os
 
-from flask import render_template, Blueprint, request, current_app, send_from_directory, redirect, flash, url_for, abort
+from flask import render_template, Blueprint, request, current_app, send_from_directory, redirect, flash, url_for, \
+    abort, jsonify
 from flask_dropzone import random_filename
 from flask_login import login_required, current_user
 from sqlalchemy import func
@@ -11,7 +12,7 @@ from albumy.decorators import confirm_required, permission_required
 from albumy.forms.main import DescriptionForm, TagForm, CommentForm
 from albumy.models import Photo, Tag, Comment, Notification, Follow, Collect, User
 from albumy.nitifications import push_collect_notification, push_comment_notification
-from albumy.utils import flash_errors, redirect_back
+from albumy.utils import flash_errors, redirect_back, resize_image
 
 main_bp = Blueprint('main', __name__)
 
@@ -21,12 +22,12 @@ def index():
     if current_user.is_authenticated:
         # filter和filter_by的区别:filter_by只能用于等值判断，filter可以用于其他判断
         followed_photos = Photo.query. \
-            join(Follow, Follow.follow_id == Photo.author_id). \
+            join(Follow, Follow.followed_id == Photo.author_id). \
             filter(Follow.follower_id == current_user.id). \
             order_by(Photo.timestamp.desc())
         page = request.args.get('page', 1, type=int)
         per_page = current_app.config['ALBUMY_PHOTO_PER_PAGE']
-        pagination = followed_photos.paginate(page, per_page)
+        pagination = followed_photos.paginate(page=page, per_page=per_page)
         photos = pagination.items
     else:
         pagination = None
@@ -51,14 +52,14 @@ def explore():
 @permission_required('UPLOAD')
 def upload():
     if request.method == 'POST' and 'file' in request.files:
-        f = request.files.get('file')
         # 可以使用一个函数来检查上传的图片是否合法
         # if not check_image(f):
         #     return 'Invalid image.', 400
+        f = request.files.get('file')
         filename = random_filename(f.filename)
         f.save(os.path.join(current_app.config['ALBUMY_UPLOAD_PATH'], filename))
-        filename_s = Photo.resize(f, filename, current_app.config['ALBUMY_PHOTO_SIZE']['small'])
-        filename_m = Photo.resize(f, filename, current_app.config['ALBUMY_PHOTO_SIZE']['medium'])
+        filename_s = resize_image(f, filename, current_app.config['ALBUMY_PHOTO_SIZE']['small'])
+        filename_m = resize_image(f, filename, current_app.config['ALBUMY_PHOTO_SIZE']['medium'])
         photo = Photo(filename=filename,
                       filename_s=filename_s,
                       filename_m=filename_m,
@@ -76,15 +77,25 @@ def get_avatar(filename):
 
 @main_bp.route('/uplodas/<path:filename>')
 def get_image(filename):
-    return send_from_directory(current_app.config['AVATARS_UPLOAD_PATH'], filename)
+    return send_from_directory(current_app.config['ALBUMY_UPLOAD_PATH'], filename)
 
 
 @main_bp.route('/photo/<int:photo_id>')
 def show_photo(photo_id):
     photo = Photo.query.get_or_404(photo_id)
+    page = request.args.get('page', 1, type=int)
+    per_page = current_app.config['ALBUMY_COMMENT_PER_PAGE']
+    pagination = Comment.query.with_parent(photo).order_by(Comment.timestamp.asc()).paginate(page=page, per_page=per_page)
+    comments = pagination.items
+    
+    comment_form = CommentForm()
     description_form = DescriptionForm()
+    tag_form = TagForm()
+    
     description_form.description.data = photo.description
-    return render_template('main/photo.html', photo=photo, description_form=description_form)
+    return render_template('main/photo.html', photo=photo, comment_form=comment_form,
+                           description_form=description_form, tag_form=tag_form,
+                           pagination=pagination, comments=comments)
 
 
 @main_bp.route('/photo/n/<int:photo_id>')
@@ -186,7 +197,7 @@ def show_collectors(photo_id):
     photo = Photo.query.get_or_404(photo_id)
     page = request.args.get('page', 1, type=int)
     per_page = current_app.config['ALBUMY_PHOTO_COLLECTORS_PER_PAGE']
-    pagination = photo.collectors.paginate(page, per_page)
+    pagination = photo.collectors.paginate(page=page, per_page=per_page)
     collects = pagination.items
     return render_template('main/collectors.html', photo=photo, pagination=pagination, collects=collects)
 
@@ -239,10 +250,10 @@ def show_tag(tag_id, order):
     per_page = current_app.config['ALBUMY_PHOTO_PER_PAGE']
     if order == 'by_time':
         order_rule = 'time'
-        pagination = Photo.query.with_parent(tag).order_by(Photo.timestamp.desc()).paginate(page, per_page)
+        pagination = Photo.query.with_parent(tag).order_by(Photo.timestamp.desc()).paginate(page=page, per_page=per_page)
     if order == 'by_collects':
         order_rule = 'collects'
-        pagination = Photo.query.with_parent(tag).order_by(Photo.collectors_count.desc()).paginate(page, per_page)
+        pagination = Photo.query.with_parent(tag).order_by(Photo.collectors_count.desc()).paginate(page=page, per_page=per_page)
     photos = pagination.items
     
     return render_template('main/tag.html', tag=tag, photos=photos, pagination=pagination, order_rule=order_rule)
@@ -276,6 +287,7 @@ def new_comment(photo_id):
         comment = Comment(body=body, photo=photo, author=author)
         replied_id = request.args.get('reply')
         if replied_id:
+            print(Comment.query.get_or_404(replied_id))
             comment.replied = Comment.query.get_or_404(replied_id)
         db.session.add(comment)
         db.session.commit()
@@ -286,9 +298,9 @@ def new_comment(photo_id):
     return redirect(url_for('main.show_photo', photo_id=photo_id, page=page))
 
 
-@main_bp.route('/reply/comment/<int:comment_id>', methods=['POST'])
+@main_bp.route('/reply/comment/<int:comment_id>')
 @login_required
-@permission_required('COMMENTS')
+@permission_required('COMMENT')
 def reply_comment(comment_id):
     # 直接定位到评论框
     comment = Comment.query.get_or_404(comment_id)
@@ -330,7 +342,7 @@ def show_notifications():
     filter_rule = request.args.get('filter')
     if filter_rule == 'unread':
         notifications = notifications.filter_by(is_read=False)
-    pagination = notifications.order_by(Notification.timestamp.desc()).paginate(page, per_page)
+    pagination = notifications.order_by(Notification.timestamp.desc()).paginate(page=page, per_page=per_page)
     notifications = pagination.items
     return render_template('main/notifications.html', notifications=notifications, pagination=pagination)
 
@@ -367,10 +379,10 @@ def search():
     page = request.args.get('page', 1, type=int)
     per_page = current_app.config['ALBUMY_SEARCH_RESULT_PER_PAGE']
     if category == 'user':
-        pagination = User.query.whooshee_search(q).pagination(page, per_page)
+        pagination = User.query.whooshee_search(q).paginate(page=page, per_page=per_page)
     if category == 'photo':
-        pagination = Photo.query.whooshee_search(q).pagination(page, per_page)
+        pagination = Photo.query.whooshee_search(q).paginate(page=page, per_page=per_page)
     if category == 'tag':
-        pagination = Tag.query.whooshee_search(q).pagination(page, per_page)
+        pagination = Tag.query.whooshee_search(q).paginate(page=page, per_page=per_page)
     results = pagination.items
     return render_template('main/search.html', q=q, category=category, pagination=pagination, results=results)

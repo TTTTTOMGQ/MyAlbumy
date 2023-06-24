@@ -1,7 +1,12 @@
 # -*- codeing = utf-8 -*-
-from flask_wtf import FlaskForm
+from flask_wtf import FlaskForm as _FlaskForm
 from wtforms import TextAreaField, SubmitField, StringField
 from wtforms.validators import Optional, Length, DataRequired
+
+
+class FlaskForm(_FlaskForm):
+    def validate_on_submit(self, extra_validators=None):
+        return self.is_submitted() and self.validate()
 
 
 class DescriptionForm(FlaskForm):
@@ -16,5 +21,5 @@ class TagForm(FlaskForm):
 
 
 class CommentForm(FlaskForm):
-    comment = TextAreaField('', validators=[DataRequired(), Length(1, 128)])
+    body = TextAreaField('', validators=[DataRequired(), Length(1, 128)])
     submit = SubmitField()

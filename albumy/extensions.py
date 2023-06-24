@@ -22,6 +22,7 @@ migrate = Migrate()
 whooshee = Whooshee()
 
 
+# 为了避免循环导入，将login_manager的初始化放在这里
 @login_manager.user_loader
 def load_user(user_id):
     from albumy.models import User
@@ -30,12 +31,11 @@ def load_user(user_id):
 
 
 login_manager.login_view = 'auth.login'
-# login_manager.login_message = 'Your custom message'
 login_manager.login_message_category = 'warning'
 
 
+# guest用户
 class Guest(AnonymousUserMixin):
-    
     def can(self, permission_name):
         return False
     
